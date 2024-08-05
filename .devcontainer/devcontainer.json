@@ -26,7 +26,8 @@
 				"ms-azuretools.vscode-docker",
 				"ms-python.python",
 				"ms-python.black-formatter",
-				"ms-python.isort"
+				"ms-python.isort",
+				"ms-toolsai.jupyter"
 			],
 			"settings": {
 				"[python]": {
@@ -38,14 +39,14 @@
 				},
 				"black-formatter.args": [
 					"--line-length",
-					"80"
+					"120"
 				],
 				"isort.args": [
 					"--profile",
 					"black"
 				],
 				"editor.rulers": [
-					80
+					120
 				]
 			}
 		}

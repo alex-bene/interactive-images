@@ -114,15 +114,15 @@ def post_process_depth_estimation_zoedepth(
         outputs_flip ([`ZoeDepthDepthEstimatorOutput`], *optional*):
             Raw outputs of the model from flipped input (averaged out in the end).
         source_sizes (`torch.Tensor` or `List[Tuple[int, int]]`):
-            Tensor of shape `(batch_size, 2)` or list of tuples (`Tuple[int, int]`) containing the source size
-            (height, width) of each image in the batch before preprocessing.
+            Tensor of shape `(batch_size, 2)` or list of tuples (`Tuple[int, int]`) containing the source size (height,
+            width) of each image in the batch before preprocessing.
         target_sizes (`torch.Tensor` or `List[Tuple[int, int]]`, *optional*):
-            Tensor of shape `(batch_size, 2)` or list of tuples (`Tuple[int, int]`) containing the target size
-            (height, width) of each image in the batch. If left to None, predictions will not be resized.
+            Tensor of shape `(batch_size, 2)` or list of tuples (`Tuple[int, int]`) containing the target size (height,
+            width) of each image in the batch. If left to None, predictions will not be resized.
         remove_padding (`bool`):
-            By default ZoeDepth addes padding to fix the boundary artifacts in the output depth map, so we need
-            remove this padding during post_processing. The parameter exists here in case the user changed the
-            image preprocessing to not include padding.
+            By default ZoeDepth addes padding to fix the boundary artifacts in the output depth map, so we need remove
+            this padding during post_processing. The parameter exists here in case the user changed the image
+            preprocessing to not include padding.
 
         vmin_perc (`float`, *optional*):
             use the `vmin_perc`-th percentile as minimum value during normalization. Defaults to 2.0.
@@ -134,17 +134,13 @@ def post_process_depth_estimation_zoedepth(
             Apply gamma correction to colored image. Defaults to False.
 
     Returns:
-        `List[Dict]`: A list of dictionaries, each dictionary containing the depth predictions and a depth PIL
-        image as predicted by the model.
+        `List[Dict]`: A list of dictionaries, each dictionary containing the depth predictions and a depth PIL image as
+        predicted by the model.
     """
     predicted_depth = outputs.predicted_depth
 
-    if (outputs_flip is not None) and (
-        predicted_depth.shape != outputs_flip.predicted_depth.shape
-    ):
-        raise ValueError(
-            "Make sure that `outputs` and `outputs_flip` have the same shape"
-        )
+    if (outputs_flip is not None) and (predicted_depth.shape != outputs_flip.predicted_depth.shape):
+        raise ValueError("Make sure that `outputs` and `outputs_flip` have the same shape")
 
     if (target_sizes is not None) and (len(predicted_depth) != len(target_sizes)):
         raise ValueError(
@@ -152,14 +148,10 @@ def post_process_depth_estimation_zoedepth(
         )
 
     if (source_sizes is None) or (len(predicted_depth) != len(source_sizes)):
-        raise ValueError(
-            "Make sure that you pass in as many source image sizes as the batch dimension of the logits"
-        )
+        raise ValueError("Make sure that you pass in as many source image sizes as the batch dimension of the logits")
 
     if outputs_flip is not None:
-        predicted_depth = torch.stack(
-            [predicted_depth, outputs_flip.predicted_depth], dim=1
-        )
+        predicted_depth = torch.stack([predicted_depth, outputs_flip.predicted_depth], dim=1)
     else:
         predicted_depth = predicted_depth.unsqueeze(1)
 
@@ -169,12 +161,6 @@ def post_process_depth_estimation_zoedepth(
     # Check [here](https://github.com/isl-org/ZoeDepth/blob/edb6daf45458569e24f50250ef1ed08c015f17a7/zoedepth/models/depth_model.py#L57)
     # for the original implementation.
     # In this section, we remove this padding to get the final depth image and depth prediction
-    if isinstance(source_sizes, List):
-        img_h = torch.Tensor([i[0] for i in source_sizes])
-        img_w = torch.Tensor([i[1] for i in source_sizes])
-    else:
-        img_h, img_w = source_sizes.unbind(1)
-
     fh = fw = 3
 
     results = []
@@ -183,10 +169,7 @@ def post_process_depth_estimation_zoedepth(
             pad_h = int(np.sqrt(s[0] / 2) * fh)
             pad_w = int(np.sqrt(s[1] / 2) * fw)
             d = F.interpolate(
-                d.unsqueeze(1),
-                size=[s[0] + 2 * pad_h, s[1] + 2 * pad_w],
-                mode="bicubic",
-                align_corners=False,
+                d.unsqueeze(1), size=[s[0] + 2 * pad_h, s[1] + 2 * pad_w], mode="bicubic", align_corners=False
             )
 
             if pad_h > 0:
@@ -204,13 +187,7 @@ def post_process_depth_estimation_zoedepth(
 
         d = d.squeeze().cpu().numpy()
         pil = Image.fromarray(
-            colorize(
-                d,
-                vmin_perc=vmin_perc,
-                vmax_perc=vmax_perc,
-                cmap=cmap,
-                gamma_corrected=gamma_corrected,
-            )
+            colorize(d, vmin_perc=vmin_perc, vmax_perc=vmax_perc, cmap=cmap, gamma_corrected=gamma_corrected)
         )
         results.append({"predicted_depth": d, "depth": pil})
 
