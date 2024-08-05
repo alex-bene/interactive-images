@@ -1,0 +1,8 @@
+version: '3.4'
+
+services:
+  interactiveimages:
+    image: interactiveimages
+    build:
+      context: .
+      dockerfile: ./Dockerfile
