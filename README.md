@@ -21,8 +21,10 @@ To use VS Code, follow these steps:
 ## TODO
 - [x] Find out why the outputs from of [ZoeDepth](https://github.com/isl-org/ZoeDepth) from the original repo are different that the one from the [🤗 implementation](https://huggingface.co/docs/transformers/v4.43.4/en/model_doc/zoedepth) (+fix). Track the updates in [this issue on 🤗 Transformers](https://github.com/huggingface/transformers/issues/32381)
 - [x] Begin by cloning the "Image to 3D" tab functionality of the [ZoeDepth 🤗 demo](https://huggingface.co/spaces/shariqfarooq/ZoeDepth)
-- [ ] Understand "intrinsic and extrinsic camera parameters" and how to use them in 3D a bit better
-- [ ] Render images from 3D mesh
+- [x] Understand "intrinsic and extrinsic camera parameters" and how to use them in 3D a bit better
+- [x] Render images from 3D mesh
+- [x] Use [Pytorch3D](https://pytorch3d.org/) whenever possible
+- [ ] Finish cleaning up `Image_to_3D` notebook and complete transition to scripts for main functionality
 - [ ] Fill missing parts of the image using Stable Diffusion or other similar generative model
 - [ ] Probably also use a depth control net for the generated images
 - [ ] Could/should we use a video generation model instead?
