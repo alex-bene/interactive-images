@@ -7,9 +7,13 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Turns off buffering for easier container logging
 ENV PYTHONUNBUFFERED=1
 
+RUN apt-get update
+RUN pip install opencv-python-headless
+
 # Install pip requirements
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir git+https://github.com/facebookresearch/pytorch3d.git@stable
 
 WORKDIR /app
 COPY . /app

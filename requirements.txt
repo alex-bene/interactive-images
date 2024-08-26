@@ -2,7 +2,14 @@ torch >= 2.3.1
 torchvision
 torchaudio
 transformers == 4.43.0
+accelerate
 rich
 matplotlib
 trimesh
 timm==0.6.11
+notebook
+# git+https://github.com/facebookresearch/pytorch3d.git@stable
+iopath
+plotly
+open3d
+ipywidgets
