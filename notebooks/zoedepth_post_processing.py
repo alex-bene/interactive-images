@@ -19,6 +19,7 @@ def colorize(
     invalid_mask: Optional[np.ndarray | None] = None,
     background_color: Optional[Tuple[int]] = (128, 128, 128, 255),
     gamma_corrected: Optional[bool] = False,
+    normalized: Optional[bool] = False,
     value_transform: Optional[Callable | None] = None,
 ):
     """Converts a depth map to a color image.
@@ -34,6 +35,8 @@ def colorize(
             use the `vmin_perc`-th percentile as `vmin`. Defaults to 2.0.
         vmax_perc (`float`, *optional*):
             use the `vmax_perc`-th percentile as `vmax`. Defaults to 98.0.
+        normalized (`bool`, *optional*):
+            Apply normalization between [0,1] for the colored image values. Defaults to False.
         cmap (`str`, *optional*):
             matplotlib colormap to use. Defaults to 'magma_r'.
         invalid_val (`int`, *optional*):
@@ -62,8 +65,10 @@ def colorize(
     vmin = np.percentile(value[mask], vmin_perc) if vmin is None else vmin
     vmax = np.percentile(value[mask], vmax_perc) if vmax is None else vmax
     if vmin != vmax:
-        value = (value - vmin) / (vmax - vmin)  # vmin..vmax
-        # value = value / vmax  # vmin..vmax
+        if normalized:
+            value = (value - vmin) / (vmax - vmin)  # 0..1
+        else:
+            value = value / vmax  # ..1
     else:
         # Avoid 0-division
         value = value * 0.0
