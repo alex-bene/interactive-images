@@ -1,0 +1,78 @@
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "build"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[project]
+name = "interactive-images"
+dynamic = ["version"]
+
+authors = [
+  {name = "Alexandros Benetatos"},
+]
+maintainers = [
+  {name = "Alexandros Benetatos"}
+]
+
+keywords = []
+description = "Interactive Images"
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = [
+    "torch>= 2.3.1",
+    "transformers== 4.43.0",
+    "Pillow",
+    "numpy",
+    "numpy",
+    "pytorch3d",
+]
+license = {file = "LICENSE"}
+
+[project.optional-dependencies]
+dev = ["rich", "notebook", "iopath", "plotly", "open3d", "ipywidgets", "pytest"]
+[project.urls]
+Repository = "https://github.com/alex-bene/interactive-images"
+
+[tool.setuptools.dynamic]
+version = { attr = "interactive_images.__version__" }
+
+[tool.ruff]
+line-length = 119
+
+[tool.ruff.lint]
+# Never enforce `E501` (line length violations).
+# ignore = ["C901", "E501", "E741", "F402", "F823",]
+# select = ["C", "E", "F", "I", "W"]
+select = ["ALL"]
+ignore = ["N806", "FBT002", "N812", "ANN002", "ANN003", "D107", "C901", "PLR0913", "FBT001", "TD003", "TD002"]
+
+# Ignore import violations in all `__init__.py` files.
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401", "D104"]
+"setup.py" = ["D100"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+"tests/**/*.py" = [
+    # at least this three should be fine in tests:
+    "ANN201",
+    "SLF001",
+    "D100",
+    "D103",
+    "S101", # asserts allowed in tests...
+    "ARG", # Unused function args -> fixtures nevertheless are functionally relevant...
+    "FBT", # Don't care about booleans as positional arguments in tests, e.g. via @pytest.mark.parametrize()
+    # The below are debateable
+    "PLR2004", # Magic value used in comparison, ...
+    "S311", # Standard pseudo-random generators are not suitable for cryptographic purposes
+]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+known-first-party = ["interactive_images"]

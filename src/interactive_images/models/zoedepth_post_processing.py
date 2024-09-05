@@ -1,30 +1,31 @@
-from typing import List, Tuple, Dict, Optional, Callable
-from PIL import Image
+from collections.abc import Callable
+
+import matplotlib as mpl
 import numpy as np
 import torch
+from PIL import Image
 from torch.nn import functional as F
 from transformers.models.zoedepth.modeling_zoedepth import ZoeDepthDepthEstimatorOutput
-
-import matplotlib
 
 
 def colorize(
     value: torch.Tensor | np.ndarray,
-    vmin: Optional[float | None] = None,
-    vmax: Optional[float | None] = None,
-    vmin_perc: Optional[float] = 2.0,
-    vmax_perc: Optional[float] = 98.0,
-    cmap: Optional[str] = "gray",
-    invalid_val: Optional[int] = -99,
-    invalid_mask: Optional[np.ndarray | None] = None,
-    background_color: Optional[Tuple[int]] = (128, 128, 128, 255),
-    gamma_corrected: Optional[bool] = False,
-    normalized: Optional[bool] = False,
-    value_transform: Optional[Callable | None] = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    vmin_perc: float | None = 2.0,
+    vmax_perc: float | None = 98.0,
+    cmap: str | None = "gray",
+    invalid_val: int | None = -99,
+    invalid_mask: np.ndarray | None = None,
+    background_color: tuple[int] | None = (128, 128, 128, 255),
+    gamma_corrected: bool | None = False,
+    normalized: bool | None = False,
+    value_transform: Callable | None = None,
 ):
-    """Converts a depth map to a color image.
+    """Convert a depth map to a color image.
 
     Args:
+    ----
         value (`torch.Tensor` or `numpy.ndarry`):
             Input depth map. Shape: (H, W) or (1, H, W) or (1, 1, H, W). All singular dimensions are squeezed
         vmin (`float`, *optional*):
@@ -51,7 +52,9 @@ def colorize(
             Apply transform function to valid pixels before coloring. Defaults to None.
 
     Returns:
+    -------
         `numpy.ndarray`, dtype - uint8: Colored depth map. Shape: (H, W, 4)
+
     """
     if isinstance(value, torch.Tensor):
         value = value.detach().cpu().numpy()
@@ -64,30 +67,24 @@ def colorize(
     # normalize
     vmin = np.percentile(value[mask], vmin_perc) if vmin is None else vmin
     vmax = np.percentile(value[mask], vmax_perc) if vmax is None else vmax
-    if vmin != vmax:
-        if normalized:
-            value = (value - vmin) / (vmax - vmin)  # 0..1
-        else:
-            value = value / vmax  # ..1
-    else:
-        # Avoid 0-division
-        value = value * 0.0
+    value = (
+        (value - vmin) / (vmax - vmin)
+        if (normalized and vmin != vmax)  # 0..1
+        else value / vmax if vmax != 0 else value * 0 / 0  # ..1
+    )
 
     # squeeze last dim if it exists
     # grey out the invalid values
 
     value[invalid_mask] = np.nan
-    cmapper = matplotlib.colormaps.get_cmap(cmap)
+    cmapper = mpl.colormaps.get_cmap(cmap)
     if value_transform:
         value = value_transform(value)
-        # value = value / value.max()
     value = cmapper(value, bytes=True)  # (nxmx4)
 
-    # img = value[:, :, :]
     img = value[...]
     img[invalid_mask] = background_color
 
-    #     return img.transpose((2, 0, 1))
     if gamma_corrected:
         # gamma correction
         img = img / 255
@@ -99,21 +96,22 @@ def colorize(
 
 
 def post_process_depth_estimation_zoedepth(
-    outputs: List[ZoeDepthDepthEstimatorOutput],
-    source_sizes: torch.Tensor | List[Tuple[int, int]],
-    target_sizes: Optional[torch.Tensor | List[Tuple[int, int]] | None] = None,
-    outputs_flip: Optional[List[ZoeDepthDepthEstimatorOutput] | None] = None,
-    remove_padding: Optional[bool] = True,
-    vmin_perc: Optional[float] = 1.0,
-    vmax_perc: Optional[float] = 99.0,
-    cmap: Optional[str] = "gray",
-    gamma_corrected: Optional[bool] = False,
-) -> List[Dict]:
-    """
-    Converts the raw output of [`ZoeDepthDepthEstimatorOutput`] into final depth predictions and depth PIL image.
+    outputs: list[ZoeDepthDepthEstimatorOutput],
+    source_sizes: torch.Tensor | list[tuple[int, int]],
+    target_sizes: torch.Tensor | list[tuple[int, int]] | None = None,
+    outputs_flip: list[ZoeDepthDepthEstimatorOutput] | None = None,
+    remove_padding: bool | None = True,
+    vmin_perc: float | None = 1.0,
+    vmax_perc: float | None = 99.0,
+    cmap: str | None = "gray",
+    gamma_corrected: bool | None = False,
+) -> list[dict]:
+    """Convert the raw output of [`ZoeDepthDepthEstimatorOutput`] into final depth predictions and depth PIL image.
+
     Only supports PyTorch.
 
     Args:
+    ----
         outputs ([`ZoeDepthDepthEstimatorOutput`]):
             Raw outputs of the model.
         outputs_flip ([`ZoeDepthDepthEstimatorOutput`], *optional*):
@@ -139,21 +137,26 @@ def post_process_depth_estimation_zoedepth(
             Apply gamma correction to colored image. Defaults to False.
 
     Returns:
+    -------
         `List[Dict]`: A list of dictionaries, each dictionary containing the depth predictions and a depth PIL image as
         predicted by the model.
+
     """
     predicted_depth = outputs.predicted_depth
 
     if (outputs_flip is not None) and (predicted_depth.shape != outputs_flip.predicted_depth.shape):
-        raise ValueError("Make sure that `outputs` and `outputs_flip` have the same shape")
+        msg = "Make sure that `outputs` and `outputs_flip` have the same shape"
+        raise ValueError(msg)
 
     if (target_sizes is not None) and (len(predicted_depth) != len(target_sizes)):
+        msg = "Make sure that you pass in as many target sizes as the batch dimension of the predicted depth"
         raise ValueError(
-            "Make sure that you pass in as many target sizes as the batch dimension of the predicted depth"
+            msg,
         )
 
     if (source_sizes is None) or (len(predicted_depth) != len(source_sizes)):
-        raise ValueError("Make sure that you pass in as many source image sizes as the batch dimension of the logits")
+        msg = "Make sure that you pass in as many source image sizes as the batch dimension of the logits"
+        raise ValueError(msg)
 
     if outputs_flip is not None:
         predicted_depth = torch.stack([predicted_depth, outputs_flip.predicted_depth], dim=1)
@@ -169,12 +172,15 @@ def post_process_depth_estimation_zoedepth(
     fh = fw = 3
 
     results = []
-    for i, (d, s) in enumerate(zip(predicted_depth, source_sizes)):
+    for i, (d, s) in enumerate(zip(predicted_depth, source_sizes, strict=False)):
         if remove_padding:
             pad_h = int(np.sqrt(s[0] / 2) * fh)
             pad_w = int(np.sqrt(s[1] / 2) * fw)
             d = F.interpolate(
-                d.unsqueeze(1), size=[s[0] + 2 * pad_h, s[1] + 2 * pad_w], mode="bicubic", align_corners=False
+                d.unsqueeze(1),
+                size=[s[0] + 2 * pad_h, s[1] + 2 * pad_w],
+                mode="bicubic",
+                align_corners=False,
             )
 
             if pad_h > 0:
@@ -186,13 +192,13 @@ def post_process_depth_estimation_zoedepth(
             target_size = target_sizes[i]
             d = F.interpolate(d, size=target_size, mode="bicubic", align_corners=False)
 
-        if outputs_flip != None:
+        if outputs_flip is not None:
             d, d_f = d.chunk(2)
             d = (d + torch.flip(d_f, dims=[-1])) / 2
 
         d = d.squeeze().cpu().numpy()
         pil = Image.fromarray(
-            colorize(d, vmin_perc=vmin_perc, vmax_perc=vmax_perc, cmap=cmap, gamma_corrected=gamma_corrected)
+            colorize(d, vmin_perc=vmin_perc, vmax_perc=vmax_perc, cmap=cmap, gamma_corrected=gamma_corrected),
         )
         results.append({"predicted_depth": d, "depth": pil})
 

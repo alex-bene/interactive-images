@@ -1,43 +1,27 @@
-"""A class the reconstructs a 3D mesh from a given 2D image"""
-
-from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+"""A class the reconstructs a 3D mesh from a given 2D image."""
 
 import numpy as np
 import requests
 import torch
-import trimesh
-from depth_estimation import DepthEstimationModel, ZoeDepth
 from PIL import Image
-from pytorch3d.io import IO
-from pytorch3d.renderer import (
-    CamerasBase,
-    FoVPerspectiveCameras,
-    HardPhongShader,
-    Materials,
-    MeshRasterizer,
-    MeshRenderer,
-    PointLights,
-    RasterizationSettings,
-    Textures,
-    TexturesUV,
-    TexturesVertex,
-)
+from pytorch3d.renderer import CamerasBase, TexturesVertex
 from pytorch3d.structures import Meshes, Pointclouds
-from tools import get_cameras_looking_at_points, sph2cart
 
-# import open3d as o3d
+from interactive_images.models.depth_estimation import DepthEstimationModel, ZoeDepth
+from interactive_images.tools import get_cameras_looking_at_points, save_pointcloud, save_textured_mesh, sph2cart
 
 
 class ImageToMesh:
+    """Class that turns a single 2D image into a 3D mesh based on an estimated depth map."""
+
     def __init__(
         self,
-        depth_model: DepthEstimationModel = ZoeDepth("nyu"),
+        depth_model: DepthEstimationModel,
         focal_length: float = 0.5,
         render_cameras_number: int = 8,
         render_cameras_elevation_offset: float = 10.0,  # degrees
         edge_threshold: float = 0.01,
-    ):
+    ) -> None:
         self.depth_model = depth_model
         self.device = depth_model.device
         self.dtype = depth_model.dtype
@@ -46,18 +30,22 @@ class ImageToMesh:
         self.render_cameras_elevation_offset = render_cameras_elevation_offset
         self.edge_threshold = edge_threshold
 
-    def generate_faces_from_grid(self, height: int, width: int):
-        # Source (modified): https://huggingface.co/spaces/shariqfarooq/ZoeDepth/blob/main/gradio_im_to_3d.py
-        """Creates mesh triangle indices from a given pixel grid size.
+    def generate_faces_from_grid(self, height: int, width: int) -> torch.Tensor:
+        """Create mesh triangle indices from a given pixel grid size.
+
             This function is not and need not be differentiable as triangle indices are
             fixed.
+            Source (modified): https://huggingface.co/spaces/shariqfarooq/ZoeDepth/blob/main/gradio_im_to_3d.py
 
         Args:
-            h: (int) denoting the height of the image.
-            w: (int) denoting the width of the image.
+        ----
+            height: (int) denoting the height of the image.
+            width: (int) denoting the width of the image.
 
         Returns:
+        -------
             triangles: 2D numpy array of indices (int) with shape (2(W-1)(H-1) x 3)
+
         """
         """
         00---01
@@ -81,17 +69,17 @@ class ImageToMesh:
                     vertex_10,
                     vertex_11,
                     vertex_01,  # faces_lower_right_triangle
-                ]
+                ],
             )
             .flatten(1)
             .chunk(2),
             dim=1,
         ).permute(1, 0)
 
-    def edge_threshold_filter(self, vertices: torch.Tensor, faces: torch.Tensor):
-        """
-        Only keep faces where all edges are smaller than edge_threshold.
-        Will remove stretch artifacts that are caused by inconsistent depth at object borders
+    def edge_threshold_filter(self, vertices: torch.Tensor, faces: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Only keep faces where all edges are smaller than edge_threshold.
+
+        Will remove stretch artifacts that are caused by inconsistent depth at object borders.
 
         :param vertices: (N, 3) torch.Tensor of type torch.float32
         :param faces: (M, 3) torch.Tensor of type torch.long
@@ -106,18 +94,21 @@ class ImageToMesh:
         return faces[mask_small_edge, :], faces[(edge_distances >= self.edge_threshold).any(1), :]
 
     @torch.inference_mode
-    def predict_depth(self, image: Image.Image):
+    def predict_depth(self, image: Image.Image) -> torch.Tensor:
+        """Predict the depth map for the image."""
         return self.depth_model(image)[0]["predicted_depth"]
 
-    def get_pixel_coordinates_pt3d(self, height: int, width: int):
-        """For an image with y_resolution and x_resolution, return a tensor of pixel coordinates
-        normalized to lie in [0, 1], with the origin (0, 0) in the bottom left corner,
-        the x-axis pointing right, and the y-axis pointing up. The top right corner
-        being at (1, 1).
+    def get_pixel_coordinates_pt3d(self, height: int, width: int) -> torch.Tensor:
+        """Get pixel coordinates for pytorch3D.
 
-        Returns:
-            xy_pix: a meshgrid of values from [0, 1] of shape
-                    (y_resolution, x_resolution, 2)
+            For an image with y_resolution and x_resolution, return a tensor of pixel coordinates normalized to lie in
+            [0, 1], with the origin (0, 0) in the bottom left corner, the x-axis pointing right, and the y-axis
+            pointing up. The top right corner being at (1, 1).
+
+        Returns
+        -------
+            xy_pix: a meshgrid of values from [0, 1] of shape (y_resolution, x_resolution, 2)
+
         """
         xs = torch.arange(width - 1, -1, -1)  # Inverted the order for x-coordinates
         ys = torch.arange(height - 1, -1, -1)  # Inverted the order for y-coordinates
@@ -125,38 +116,59 @@ class ImageToMesh:
 
         return torch.cat([x.unsqueeze(dim=2), y.unsqueeze(dim=2)], dim=2).to(self.device)
 
-    def create_cameras(self, depth: torch.Tensor, img_size: Tuple[int, int]):
+    def create_cameras(self, depth: torch.Tensor, img_size: tuple[int, int]) -> tuple[CamerasBase, CamerasBase | None]:
+        """Create the main camera and additional "render" cameras for later."""
+        # TODO: the other cameras should probably not be here but rather on the renderer
         z_center_main = depth[depth.shape[0] // 2, depth.shape[1] // 2]
         z_center_other = (depth.max() + depth.min()) / 2
 
         return get_cameras_looking_at_points(
             camera_locations=torch.tensor(
-                [[0, 0, z_center_main]]
-                + torch.tensor(
-                    np.stack(
-                        sph2cart(
-                            [360 / self.render_cameras_number * i for i in range(self.render_cameras_number)],
-                            [90 - self.render_cameras_elevation_offset] * self.render_cameras_number,
-                            [z_center_other] * self.render_cameras_number,
-                        )
-                    ).T
-                ).tolist()
+                [
+                    [0, 0, z_center_main],
+                    *torch.tensor(
+                        np.stack(
+                            sph2cart(
+                                [360 / self.render_cameras_number * i for i in range(self.render_cameras_number)],
+                                [90 - self.render_cameras_elevation_offset] * self.render_cameras_number,
+                                [z_center_other] * self.render_cameras_number,
+                            ),
+                        ).T,
+                    ).tolist(),
+                ],
             ).to(dtype=self.dtype, device=self.device),
             image_size=torch.tensor(img_size).to(dtype=self.dtype, device=self.device),
             focal_length=self.focal_length * img_size[0],
         )
 
-    def calculate_world_points(self, depth: torch.Tensor, img_size: Tuple[int, int], camera: CamerasBase):
+    def calculate_world_points(
+        self,
+        depth: torch.Tensor,
+        img_size: tuple[int, int],
+        camera: CamerasBase,
+    ) -> torch.Tensor:
+        """Calculate world points by unprojecting the camera-space 2.5D coordinates."""
         xy_pix = self.get_pixel_coordinates_pt3d(img_size[1], img_size[0]).flatten(0, -2)
         depth = torch.tensor(depth).unsqueeze(2).flatten(0, -2)
         return camera.unproject_points(torch.cat((xy_pix, depth), dim=1))
 
-    def calculate_faces(self, world_points: torch.Tensor, img_size: Tuple[int, int]):
+    def calculate_faces(
+        self,
+        world_points: torch.Tensor,
+        img_size: tuple[int, int],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Calculate the triangular faces for the mesh based on the 2D image grid."""
         faces_new = self.generate_faces_from_grid(img_size[1], img_size[0])
         faces_filtered, faces_removed = self.edge_threshold_filter(world_points, faces_new)
         return faces_new, faces_filtered, faces_removed
 
-    def __call__(self, image: Image.Image, log: bool = False, filename: str | None = None):
+    def __call__(
+        self,
+        image: Image.Image,
+        log: bool = False,
+        filename: str | None = None,
+    ) -> tuple[Meshes, Pointclouds, tuple[CamerasBase, CamerasBase | None]]:
+        """Transform a given 2D image to a 3D mesh."""
         # Estimate Depth
         predicted_depth = self.predict_depth(image)
 
@@ -187,11 +199,8 @@ class ImageToMesh:
         # and know where to use generative filling
         mesh = Meshes(verts=[world_points], faces=[faces_new], textures=textures)
         if filename is not None:
-            filename_mesh = Path(filename).with_suffix(".obj")
-            filename_pointcloud = Path(filename).with_suffix(".ply")
-            io = IO()
-            io.save_mesh(mesh, filename_mesh)
-            io.save_pointcloud(pointcloud, filename_pointcloud)
+            save_pointcloud(pointcloud, filename)
+            save_textured_mesh(mesh, filename)
 
         return (mesh, pointcloud, (main_camera, other_cameras))
 
@@ -214,7 +223,7 @@ if __name__ == "__main__":
     # Load Image
     url = "https://shariqfarooq-zoedepth.hf.space/file=/home/user/app/examples/person_1.jpeg"
     url = "https://shariqfarooq-zoedepth.hf.space/file=/home/user/app/examples/mountains.jpeg"
-    image = Image.open(requests.get(url, stream=True).raw)
+    image = Image.open(requests.get(url, stream=True, timeout=5).raw)
     image.thumbnail((1024, 1024))
 
     # Load Model
@@ -230,7 +239,7 @@ if __name__ == "__main__":
     )
 
     # Image to 3D Mesh
-    mesh, point_cloud, (main_camera, other_cameras) = meshifier(image)
+    mesh, point_cloud, (main_camera, other_cameras) = meshifier(image, filename="test")
 
     # Visualization
     fig = plot_scene(
