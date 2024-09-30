@@ -1,14 +1,29 @@
 """A class the reconstructs a 3D mesh from a given 2D image."""
 
+import logging
+
 import numpy as np
-import requests
 import torch
 from PIL import Image
 from pytorch3d.renderer import CamerasBase, TexturesVertex
 from pytorch3d.structures import Meshes, Pointclouds
+from rich.logging import RichHandler
 
-from interactive_images.models.depth_estimation import DepthEstimationModel, ZoeDepth
+from interactive_images.models.depth_estimation import DepthEstimationModel
 from interactive_images.tools import get_cameras_looking_at_points, save_pointcloud, save_textured_mesh, sph2cart
+
+
+FORMAT = "%(message)s"
+logging.basicConfig(
+    level="NOTSET",
+    format=FORMAT,
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True)],
+)
+
+# Initialize a logger
+logger = logging.getLogger(__name__)
+logging.getLogger("urllib3").setLevel(logging.INFO)
 
 
 class ImageToMesh:
@@ -147,7 +162,22 @@ class ImageToMesh:
         img_size: tuple[int, int],
         camera: CamerasBase,
     ) -> torch.Tensor:
-        """Calculate world points by unprojecting the camera-space 2.5D coordinates."""
+        """Calculate 3D world points by unprojecting camera-space 2.5D coordinates.
+
+        This function takes the predicted depth map and camera object as input,
+        and returns the corresponding 3D world points.
+
+        Args:
+        ----
+            depth: A 2D tensor representing the predicted depth map.
+            img_size: A tuple of integers representing the size of the image.
+            camera: A CamerasBase object representing the camera from which the world points are calculated.
+
+        Returns:
+        -------
+            A 2D tensor representing the 3D world points.
+
+        """
         xy_pix = self.get_pixel_coordinates_pt3d(img_size[1], img_size[0]).flatten(0, -2)
         depth = torch.tensor(depth).unsqueeze(2).flatten(0, -2)
         return camera.unproject_points(torch.cat((xy_pix, depth), dim=1))
@@ -157,7 +187,25 @@ class ImageToMesh:
         world_points: torch.Tensor,
         img_size: tuple[int, int],
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Calculate the triangular faces for the mesh based on the 2D image grid."""
+        """Calculate the triangular faces for the mesh based on the 2D image grid.
+
+        This function generates the triangular faces for the mesh by first creating a grid of faces based
+        on the image size. It then filters these faces based on the edge threshold to remove any faces that
+        have edges larger than the threshold.
+
+        Args:
+        ----
+            world_points: A 2D tensor representing the 3D world points of the mesh vertices.
+            img_size: A tuple of integers representing the size of the image.
+
+        Returns:
+        -------
+            A tuple of three tensors:
+                - faces_new: The original generated faces.
+                - faces_filtered: The faces that have been filtered to have edges smaller than the edge threshold.
+                - faces_removed: The faces that have been removed due to having edges larger than the edge threshold.
+
+        """
         faces_new = self.generate_faces_from_grid(img_size[1], img_size[0])
         faces_filtered, faces_removed = self.edge_threshold_filter(world_points, faces_new)
         return faces_new, faces_filtered, faces_removed
@@ -165,7 +213,6 @@ class ImageToMesh:
     def __call__(
         self,
         image: Image.Image,
-        log: bool = False,
         filename: str | None = None,
     ) -> tuple[Meshes, Pointclouds, tuple[CamerasBase, CamerasBase | None]]:
         """Transform a given 2D image to a 3D mesh."""
@@ -177,18 +224,18 @@ class ImageToMesh:
 
         # Calculate 3D World Points
         world_points = self.calculate_world_points(predicted_depth, image.size, main_camera)
-        if log:
-            print(f"Vertices: {world_points.shape}")
+
+        logger.info("Vertices: %s", world_points.shape)
 
         # Calculate 3D Mesh Faces
         faces_new, faces_filtered, faces_removed = self.calculate_faces(world_points, image.size)
-        if log:
-            print(f"Faces - all: {faces_new.shape}")
-            print(f"Faces - filtered: {faces_filtered.shape}")
-            print(f"Faces - removed: {faces_removed.shape}")
+
+        logger.info("Faces - all: %s", faces_new.shape)
+        logger.info("Faces - filtered: %s", faces_filtered.shape)
+        logger.info("Faces - removed: %s", faces_removed.shape)
 
         # Calculate Vertex Colors
-        colors = torch.tensor(np.array(image).reshape(-1, 3) / 255)
+        colors = torch.tensor(np.array(image).reshape(-1, 3) / 255).to(torch.float)
         ## "Whitten"-out all vertexes that are part of removed (filtered) faces
         colors[faces_removed.unique()] = torch.full((1, 3), fill_value=255).to(colors)
         textures = TexturesVertex(verts_features=colors.unsqueeze(0))
@@ -203,67 +250,3 @@ class ImageToMesh:
             save_textured_mesh(mesh, filename)
 
         return (mesh, pointcloud, (main_camera, other_cameras))
-
-
-if __name__ == "__main__":
-    from pytorch3d.vis.plotly_vis import AxisArgs, plot_scene
-
-    # Parameters
-    device = "cpu"
-    dtype = torch.float32
-    if torch.cuda.is_available():
-        device = "cuda:0"
-        dtype = torch.float16
-
-    focal_length = 0.5
-    render_cameras_number = 8
-    render_cameras_elevation_offset = 10  # degrees
-    edge_threshold = 0.1
-
-    # Load Image
-    url = "https://shariqfarooq-zoedepth.hf.space/file=/home/user/app/examples/person_1.jpeg"
-    url = "https://shariqfarooq-zoedepth.hf.space/file=/home/user/app/examples/mountains.jpeg"
-    image = Image.open(requests.get(url, stream=True, timeout=5).raw)
-    image.thumbnail((1024, 1024))
-
-    # Load Model
-    model = ZoeDepth("nyu", dtype=dtype, device=device)
-
-    # Load Meshifier
-    meshifier = ImageToMesh(
-        depth_model=model,
-        focal_length=focal_length,
-        render_cameras_number=render_cameras_number,
-        render_cameras_elevation_offset=render_cameras_elevation_offset,
-        edge_threshold=edge_threshold,
-    )
-
-    # Image to 3D Mesh
-    mesh, point_cloud, (main_camera, other_cameras) = meshifier(image, filename="test")
-
-    # Visualization
-    fig = plot_scene(
-        {
-            "mesh": {
-                "mesh": mesh,
-                "main_camera": main_camera,
-                "other_cameras": other_cameras,
-            },
-            "pointcloud": {
-                "pointcloud": point_cloud,
-                "main_camera": main_camera,
-                "other_cameras": other_cameras,
-            },
-        },
-        axis_args=AxisArgs(backgroundcolor="rgb(200,230,200)", showgrid=True, showticklabels=True),
-        ncols=1,
-        viewpoint_cameras=main_camera,
-    )
-
-    fig.update_layout(
-        autosize=False,
-        width=1200,
-        height=1500,
-    )
-
-    fig.show()
