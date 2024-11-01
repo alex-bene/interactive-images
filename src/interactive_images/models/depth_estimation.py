@@ -4,8 +4,6 @@ import torch
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 
-from .zoedepth_post_processing import post_process_depth_estimation_zoedepth
-
 
 class DepthEstimationModel(torch.nn.Module):
     """Base class for depth estimation models."""
@@ -102,10 +100,10 @@ class ZoeDepth(DepthEstimationModelHF):
         """Call the model to estimate depths from images."""
         inputs = self.image_processor(images=images, return_tensors="pt").to(device=self.device, dtype=self.dtype)
         outputs = self.model(**inputs)
-        outputs_flip = self.model(pixel_values=torch.flip(inputs.pixel_values, dims=[3]))
+        outputs_flipped = self.model(pixel_values=torch.flip(inputs.pixel_values, dims=[3]))
 
-        return post_process_depth_estimation_zoedepth(
+        return self.image_processor.post_process_depth_estimation(
             outputs,
             [images.size[::-1]] if isinstance(images, Image.Image) else [image.size[::-1] for image in images],
-            outputs_flip=outputs_flip,
+            outputs_flipped=outputs_flipped,
         )

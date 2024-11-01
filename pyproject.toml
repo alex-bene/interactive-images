@@ -1,6 +1,6 @@
 
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "build"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
@@ -27,9 +27,8 @@ requires-python = ">=3.11"
 readme = "README.md"
 dependencies = [
     "torch>= 2.3.1",
-    "transformers== 4.43.0",
+    "transformers== 4.46.1",
     "Pillow",
-    "numpy",
     "numpy",
     "pytorch3d",
 ]

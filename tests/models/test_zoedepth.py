@@ -18,4 +18,4 @@ def test_zoedepth():
     assert image.size == (341, 512)
 
     outputs = model(image)
-    assert outputs[0]["predicted_depth"].shape == outputs[0]["depth"].size[::-1] == (512, 341)
+    assert outputs[0]["predicted_depth"].shape == (512, 341)
