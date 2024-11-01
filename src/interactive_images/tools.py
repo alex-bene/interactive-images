@@ -85,14 +85,7 @@ def get_cameras_looking_at_points(
         device=device,
     )
 
-    return (
-        cameras[0],
-        (
-            renderer.camera_utils.join_cameras_as_batch([cameras[i] for i in range(1, number_of_cameras)])
-            if number_of_cameras > 1
-            else None
-        ),
-    )
+    return cameras[0] if number_of_cameras == 1 else cameras
 
 
 def image_grid(imgs: Image.Image, rows: int, cols: int) -> Image.Image:

@@ -23,19 +23,22 @@ def test_image_to_mesh(tmp_path: Path):
     # Load Meshifier
     meshifier = ImageToMesh(
         depth_model=model,
-        focal_length=0.5,
-        render_cameras_number=8,
-        render_cameras_elevation_offset=10,
         edge_threshold=0.1,
     )
 
     # Image to 3D Mesh
     test_filepath = tmp_path / "test.obj"
-    mesh, point_cloud, (main_camera, other_cameras) = meshifier(image, filename=test_filepath)
+    mesh, point_cloud, main_camera = meshifier(
+        image,
+        filename=test_filepath,
+        focal_length=0.5,
+        dilate=1,
+        removed_faces_color=(256, 256, 256),
+    )
 
     expected_slices = {
         "verts": torch.tensor(
-            [[-3.7404, 2.7998, -1.4861], [-3.7328, 2.7996, -1.4859], [-3.7255, 2.7996, -1.4858]],
+            [[3.7404, 2.7998, 3.7477], [3.7328, 2.7996, 3.7475], [3.7255, 2.7996, 3.7474]],
         ),
         "faces": torch.tensor([[0, 1024, 1], [1, 1025, 2], [2, 1026, 3]]),
         "features": torch.tensor([[0.6235, 0.6353, 0.5176], [0.5961, 0.6235, 0.4980], [0.6078, 0.6588, 0.5176]]),
@@ -60,15 +63,7 @@ def test_image_to_mesh(tmp_path: Path):
     assert torch.allclose(point_cloud.features_list()[0][:3, :], expected_slices["features"], atol=1e-4)
 
     # Assert Cameras
-    assert torch.allclose(main_camera.T, torch.tensor([[-0.0000, -0.0000, 2.2616]]), atol=1e-4)
-    assert other_cameras.T.shape == torch.Size([8, 3])
-    assert other_cameras.R.shape == torch.Size([8, 3, 3])
-    assert torch.allclose(other_cameras.T[1], torch.tensor([-1.6813e-08, 1.2324e-08, 3.2096e00]), atol=1e-4)
-    assert torch.allclose(
-        other_cameras.R[1],
-        torch.tensor([[-0.9923, -0.0152, -0.1228], [0.0000, 0.9924, -0.1228], [0.1237, -0.1218, -0.9848]]),
-        atol=1e-4,
-    )
+    assert torch.allclose(main_camera.T, torch.tensor([[0.0, 0.0, 0.0]]), atol=1e-4)
 
     # Assert save/load functions
     loaded_point_cloud = load_pointcloud(test_filepath)
