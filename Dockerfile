@@ -14,6 +14,7 @@ RUN pip install opencv-python-headless
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
 RUN python -m pip install --no-cache-dir git+https://github.com/facebookresearch/pytorch3d.git@stable
+# RUN python -m pip install --no-cache-dir -e .
 
 WORKDIR /app
 COPY . /app
