@@ -10,7 +10,7 @@
 	},
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	"features": {
-		"ghcr.io/devcontainers-contrib/features/ruff:1": {}
+		"ghcr.io/devcontainers-contrib/features/ruff:2": {}
 	},
 	// Configure tool-specific properties.
 	"customizations": {
